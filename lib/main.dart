@@ -73,11 +73,11 @@ class _FreshCartAppState extends State<FreshCartApp> {
 class UserProfileData {
   const UserProfileData({
     required this.name,
-    required this.phoneNumber,
+    required this.email,
     required this.password,
   });
 
   final String name;
-  final String phoneNumber;
+  final String email;
   final String password;
 }

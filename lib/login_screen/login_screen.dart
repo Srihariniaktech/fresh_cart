@@ -18,12 +18,12 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _phoneController = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
   @override
   void dispose() {
-    _phoneController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -39,15 +39,15 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    final phone = _phoneController.text.trim();
+    final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
-    if (savedUser.phoneNumber == phone && savedUser.password == password) {
+    if (savedUser.email == email && savedUser.password == password) {
       _showMessage('Login successful.');
       return;
     }
 
-    _showMessage('Phone number or password is incorrect.');
+    _showMessage('Email or password is incorrect.');
   }
 
   void _showMessage(String message) {
@@ -76,7 +76,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const _HeaderCard(
                   title: 'Welcome back',
                   subtitle:
-                      'Login with your phone number and password to continue shopping.',
+                      'Login with your email and password to continue shopping.',
                 ),
                 const SizedBox(height: 24),
                 Container(
@@ -107,13 +107,17 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 18),
                         _AppField(
-                          controller: _phoneController,
-                          label: 'Phone Number',
-                          hintText: 'Enter your phone number',
-                          keyboardType: TextInputType.phone,
+                          controller: _emailController,
+                          label: 'Email',
+                          hintText: 'Enter your email',
+                          keyboardType: TextInputType.emailAddress,
                           validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'Phone number is required';
+                            final email = value?.trim() ?? '';
+                            if (email.isEmpty) {
+                              return 'Email is required';
+                            }
+                            if (!email.contains('@')) {
+                              return 'Enter a valid email';
                             }
                             return null;
                           },

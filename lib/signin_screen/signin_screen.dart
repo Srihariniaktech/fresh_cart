@@ -14,13 +14,13 @@ class SignInScreen extends StatefulWidget {
 class _SignInScreenState extends State<SignInScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _phoneController = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
   @override
   void dispose() {
     _nameController.dispose();
-    _phoneController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -33,7 +33,7 @@ class _SignInScreenState extends State<SignInScreen> {
     widget.onAccountCreated(
       UserProfileData(
         name: _nameController.text.trim(),
-        phoneNumber: _phoneController.text.trim(),
+        email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       ),
     );
@@ -98,13 +98,17 @@ class _SignInScreenState extends State<SignInScreen> {
                         ),
                         const SizedBox(height: 14),
                         _FieldBlock(
-                          controller: _phoneController,
-                          label: 'Phone Number',
-                          hintText: 'Enter your phone number',
-                          keyboardType: TextInputType.phone,
+                          controller: _emailController,
+                          label: 'Email',
+                          hintText: 'Enter your email',
+                          keyboardType: TextInputType.emailAddress,
                           validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'Phone number is required';
+                            final email = value?.trim() ?? '';
+                            if (email.isEmpty) {
+                              return 'Email is required';
+                            }
+                            if (!email.contains('@')) {
+                              return 'Enter a valid email';
                             }
                             return null;
                           },
@@ -190,7 +194,7 @@ class _SignInHero extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Save your name, phone number and password for your account.',
+                  'Save your name, email and password for your account.',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.86),
                     fontSize: 12.5,
