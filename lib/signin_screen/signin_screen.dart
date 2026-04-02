@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
-
-import '../main.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class SignInScreen extends StatefulWidget {
-  const SignInScreen({super.key, required this.onAccountCreated});
-
-  final ValueChanged<UserProfileData> onAccountCreated;
+  const SignInScreen({super.key});
 
   @override
   State<SignInScreen> createState() => _SignInScreenState();
@@ -25,18 +22,42 @@ class _SignInScreenState extends State<SignInScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
 
-    widget.onAccountCreated(
-      UserProfileData(
-        name: _nameController.text.trim(),
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
-      ),
-    );
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    try {
+      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Account created successfully.')),
+      );
+      Navigator.pop(context);
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+
+      String message = 'Account creation failed.';
+      if (e.code == 'email-already-in-use') {
+        message = 'This email is already in use.';
+      } else if (e.code == 'weak-password') {
+        message = 'Password is too weak.';
+      } else if (e.code == 'invalid-email') {
+        message = 'Email address is invalid.';
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    }
   }
 
   @override
@@ -123,8 +144,8 @@ class _SignInScreenState extends State<SignInScreen> {
                             if (value == null || value.trim().isEmpty) {
                               return 'Password is required';
                             }
-                            if (value.trim().length < 4) {
-                              return 'Use at least 4 characters';
+                            if (value.trim().length < 6) {
+                              return 'Use at least 6 characters';
                             }
                             return null;
                           },
@@ -194,7 +215,7 @@ class _SignInHero extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Save your name, email and password for your account.',
+                  'Create your account with Firebase email and password.',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.86),
                     fontSize: 12.5,

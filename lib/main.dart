@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 
+import 'firebase_options.dart';
+import 'home_screen/home_screen.dart';
 import 'login_screen/login_screen.dart';
 import 'signin_screen/signin_screen.dart';
 import 'start_screen/start_screen.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const FreshCartApp());
 }
 
@@ -17,7 +25,6 @@ class FreshCartApp extends StatefulWidget {
 
 class _FreshCartAppState extends State<FreshCartApp> {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
-  UserProfileData? _registeredUser;
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +41,9 @@ class _FreshCartAppState extends State<FreshCartApp> {
         fontFamily: 'sans-serif',
         useMaterial3: true,
       ),
-      home: StartScreen(onGetStarted: _pushLogin, onOpenSignIn: _pushSignIn),
+      home: FirebaseAuth.instance.currentUser == null
+          ? StartScreen(onGetStarted: _pushLogin, onOpenSignIn: _pushSignIn)
+          : const HomeScreen(),
     );
   }
 
@@ -43,41 +52,14 @@ class _FreshCartAppState extends State<FreshCartApp> {
   void _pushLogin() {
     _navigator.push(
       MaterialPageRoute(
-        builder: (_) => LoginScreen(
-          registeredUser: _registeredUser,
-          onCreateAccount: _pushSignIn,
-        ),
+        builder: (_) => LoginScreen(onCreateAccount: _pushSignIn),
       ),
     );
   }
 
   void _pushSignIn() {
     _navigator.push(
-      MaterialPageRoute(
-        builder: (_) => SignInScreen(
-          onAccountCreated: (user) {
-            setState(() {
-              _registeredUser = user;
-            });
-            _navigator.pop();
-            ScaffoldMessenger.of(_navigator.context).showSnackBar(
-              const SnackBar(content: Text('Account created. Please login.')),
-            );
-          },
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => const SignInScreen()),
     );
   }
-}
-
-class UserProfileData {
-  const UserProfileData({
-    required this.name,
-    required this.email,
-    required this.password,
-  });
-
-  final String name;
-  final String email;
-  final String password;
 }

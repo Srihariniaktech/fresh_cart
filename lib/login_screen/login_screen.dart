@@ -1,15 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-import '../main.dart';
+import '../home_screen/home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({
-    super.key,
-    required this.registeredUser,
-    required this.onCreateAccount,
-  });
+  const LoginScreen({super.key, required this.onCreateAccount});
 
-  final UserProfileData? registeredUser;
   final VoidCallback onCreateAccount;
 
   @override
@@ -28,26 +24,40 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    final savedUser = widget.registeredUser;
-    if (savedUser == null) {
-      _showMessage('Create your account first from the Sign In page.');
       return;
     }
 
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
-    if (savedUser.email == email && savedUser.password == password) {
-      _showMessage('Login successful.');
-      return;
-    }
+    try {
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
 
-    _showMessage('Email or password is incorrect.');
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+      );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+
+      String message = 'Login failed.';
+      if (e.code == 'user-not-found') {
+        message = 'No user found for this email.';
+      } else if (e.code == 'wrong-password') {
+        message = 'Wrong password.';
+      } else if (e.code == 'invalid-email') {
+        message = 'Email address is invalid.';
+      } else if (e.code == 'invalid-credential') {
+        message = 'Email or password is incorrect.';
+      }
+
+      _showMessage(message);
+    }
   }
 
   void _showMessage(String message) {
@@ -367,3 +377,5 @@ class _AppField extends StatelessWidget {
     );
   }
 }
+
+
