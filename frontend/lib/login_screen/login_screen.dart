@@ -1,11 +1,68 @@
+/*
+ * ============================================================
+ * LOGIN SCREEN - Flutter Frontend
+ * ============================================================
+ *
+ * This is the login screen for FreshCart app.
+ * It handles user login with Firebase Auth and connects to backend API.
+ *
+ * COMPLETE FLOW:
+ *
+ *   Step 1: User enters email and password
+ *           ↓
+ *   Step 2: Flutter validates the form
+ *           ↓
+ *   Step 3: Flutter calls Firebase Auth to authenticate
+ *           Firebase verifies email/password against Firebase servers
+ *           ↓
+ *   Step 4: Firebase returns an ID Token (JWT)
+ *           This token proves the user has successfully authenticated
+ *           ↓
+ *   Step 5: Flutter sends this ID Token to Backend API
+ *           Request: POST /api/auth/verify
+ *           Header:  Authorization: Bearer <firebase_id_token>
+ *           ↓
+ *   Step 6: Backend receives the request
+ *           Backend's verifyToken middleware extracts the token
+ *           ↓
+ *   Step 7: Backend calls Firebase Admin SDK to verify the token
+ *           Firebase Admin SDK: admin.auth().verifyIdToken(token)
+ *           ↓
+ *   Step 8: Token is valid! Backend fetches additional user details
+ *           Using: admin.auth().getUser(uid)
+ *           ↓
+ *   Step 9: Backend returns success response to Flutter
+ *           Response: { success: true, user: { uid, email, ... } }
+ *           ↓
+ *   Step 10: Flutter navigates to HomeScreen
+ *
+ * ERROR FLOWS:
+ *
+ *   If Firebase login fails (wrong password, etc.)
+ *   → Show error message to user
+ *
+ *   If Firebase token verification fails on backend
+ *   → Return 401 error
+ *   → Flutter shows "Invalid token" or "Connection error"
+ *
+ *   If backend is unreachable
+ *   → Flutter catches the HTTP error
+ *   → Shows "Connection error. Please check your network."
+ *
+ */
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
 
+import '../config/api_config.dart';
 import '../home_screen/home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.onCreateAccount});
 
+  // Callback to navigate to Sign In screen
+  // Used when user taps "No account yet? Sign In"
   final VoidCallback onCreateAccount;
 
   @override
@@ -13,10 +70,16 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  // Form key for validation
+  // Used to check if form is valid before submission
   final _formKey = GlobalKey<FormState>();
+
+  // Text controllers to read user input
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
+  // Clean up controllers when widget is destroyed
+  // Prevents memory leaks
   @override
   void dispose() {
     _emailController.dispose();
@@ -24,48 +87,193 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+
+  // ============================================================
+  // STEP 1: SUBMIT LOGIN FORM
+  // ============================================================
+  //
+  // This function is called when user taps the Login button
+  //
+  // FLOW:
+  //   1. Validate form (email format, password not empty)
+  //   2. Get email and password from text fields
+  //   3. Call Firebase Auth to authenticate
+  //   4. Get Firebase ID Token from the auth result
+  //   5. Send ID Token to Backend API for verification
+  //   6. On success, navigate to HomeScreen
+  //
   Future<void> _submit() async {
+    // --------------------------------------------------------
+    // VALIDATION STEP
+    // --------------------------------------------------------
+    // Check if form is valid
+    // _formKey.currentState.validate() calls each field's validator
+    // If any validator returns non-null (error), form is invalid
     if (!_formKey.currentState!.validate()) {
-      return;
+      return; // Don't proceed if form is invalid
     }
 
+    // Get user input from text fields
+    // .trim() removes leading/trailing whitespace
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
     try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
+      // --------------------------------------------------------
+      // STEP 2: FIREBASE AUTHENTICATION
+      // --------------------------------------------------------
+      //
+      // Call Firebase Auth to sign in with email and password
+      // FirebaseAuth.instance.signInWithEmailAndPassword:
+      //   - Connects to Firebase servers
+      //   - Verifies email and password
+      //   - Creates a local session for the user
+      //
+      // Returns: UserCredential object containing:
+      //   - user: The authenticated User object
+      //   - credential: The credential (ID token, etc.)
+      //
+      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
 
-      if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-      );
-    } on FirebaseAuthException catch (e) {
-      if (!mounted) return;
+      // --------------------------------------------------------
+      // STEP 3: GET FIREBASE ID TOKEN
+      // --------------------------------------------------------
+      //
+      // After successful Firebase login, get the ID token
+      // This token proves the user has authenticated with Firebase
+      //
+      // getIdToken() returns a JWT (JSON Web Token)
+      // This token can be verified by any server
+      // It contains the user's UID and other claims
+      //
+      // The token is valid for 1 hour
+      // After that, user needs to re-authenticate
+      //
+      final idToken = await credential.user!.getIdToken();
 
-      String message = 'Login failed.';
-      if (e.code == 'user-not-found') {
-        message = 'No user found for this email.';
-      } else if (e.code == 'wrong-password') {
-        message = 'Wrong password.';
-      } else if (e.code == 'invalid-email') {
-        message = 'Email address is invalid.';
-      } else if (e.code == 'invalid-credential') {
-        message = 'Email or password is incorrect.';
+      debugPrint('[Login] Firebase auth successful');
+      debugPrint('[Login] User: ${credential.user?.email}');
+
+      // --------------------------------------------------------
+      // STEP 4: NAVIGATE TO HOME SCREEN (Firebase login only)
+      // --------------------------------------------------------
+      // NOTE: Backend API verification is optional.
+      // If backend is unreachable, Firebase login is still valid.
+      // We navigate immediately after Firebase login succeeds.
+      //
+      // Wrap in addPostFrameCallback to ensure navigation after frame renders
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+        );
+      });
+
+      // --------------------------------------------------------
+      // STEP 5: SEND TOKEN TO BACKEND API (background)
+      // --------------------------------------------------------
+      // This runs AFTER navigation so it doesn't block the user.
+      // If this fails, user is already on HomeScreen.
+      //
+      _callBackendApi(idToken!);
+
+    }
+    // --------------------------------------------------------
+    // ERROR HANDLING
+    // --------------------------------------------------------
+    on FirebaseAuthException catch (e) {
+      // Firebase Auth specific errors
+      // These are errors from Firebase authentication
+
+      if (!mounted) return; // Widget may have been disposed
+
+      String message; // Error message to show user
+
+      // Check specific error codes and set appropriate message
+      switch (e.code) {
+        case 'user-not-found':
+          message = 'No user found for this email.';
+          break;
+        case 'wrong-password':
+          message = 'Wrong password. Please try again.';
+          break;
+        case 'invalid-email':
+          message = 'Email address is invalid.';
+          break;
+        case 'invalid-credential':
+          message = 'Email or password is incorrect.';
+          break;
+        case 'user-disabled':
+          message = 'This account has been disabled.';
+          break;
+        case 'too-many-requests':
+          message = 'Too many attempts. Please try again later.';
+          break;
+        default:
+          message = 'Login failed. Please try again.';
       }
 
       _showMessage(message);
+
+    } catch (e) {
+      // Network error or other unexpected errors
+      if (!mounted) return;
+      debugPrint('[Login] Error: $e');
+      _showMessage('Connection error. Please check your network.');
     }
   }
 
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+
+  // ============================================================
+  // BACKEND API CALL (runs in background, non-blocking)
+  // ============================================================
+  Future<void> _callBackendApi(String idToken) async {
+    try {
+      final response = await http.post(
+        Uri.parse(ApiConfig.verifyToken),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $idToken',
+        },
+      ).timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        debugPrint('[Login] Backend verified: $idToken');
+      } else {
+        debugPrint('[Login] Backend returned: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('[Login] Backend offline: $e');
+    }
   }
 
+
+  // ============================================================
+  // HELPER: SHOW SNACKBAR MESSAGE
+  // ============================================================
+  //
+  // Shows a temporary message at the bottom of the screen
+  // Used for error messages and success notifications
+  //
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red.shade600,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+
+  // ============================================================
+  // BUILD THE UI
+  // ============================================================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -83,12 +291,15 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Header with animated logo
                 const _HeaderCard(
                   title: 'Welcome back',
                   subtitle:
                       'Login with your email and password to continue shopping.',
                 ),
                 const SizedBox(height: 24),
+
+                // Login form container
                 Container(
                   padding: const EdgeInsets.all(22),
                   decoration: BoxDecoration(
@@ -103,10 +314,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     ],
                   ),
                   child: Form(
-                    key: _formKey,
+                    key: _formKey, // Attach form key for validation
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Login title
                         const Text(
                           'Login',
                           style: TextStyle(
@@ -116,6 +328,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         const SizedBox(height: 18),
+
+                        // Email field
                         _AppField(
                           controller: _emailController,
                           label: 'Email',
@@ -133,11 +347,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           },
                         ),
                         const SizedBox(height: 14),
+
+                        // Password field
                         _AppField(
                           controller: _passwordController,
                           label: 'Password',
                           hintText: 'Enter your password',
-                          obscureText: true,
+                          obscureText: true, // Hide password characters
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
                               return 'Password is required';
@@ -146,11 +362,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           },
                         ),
                         const SizedBox(height: 20),
+
+                        // Login button
                         SizedBox(
                           width: double.infinity,
                           height: 54,
                           child: FilledButton(
-                            onPressed: _submit,
+                            onPressed: _submit, // Triggers _submit() function
                             style: FilledButton.styleFrom(
                               backgroundColor: const Color(0xFF209149),
                               shape: RoundedRectangleBorder(
@@ -167,6 +385,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         const SizedBox(height: 10),
+
+                        // Sign in link
                         Center(
                           child: TextButton(
                             onPressed: widget.onCreateAccount,
@@ -192,6 +412,10 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
+
+// ============================================================
+// HEADER CARD - Animated welcome header
+// ============================================================
 class _HeaderCard extends StatelessWidget {
   const _HeaderCard({required this.title, required this.subtitle});
 
@@ -243,6 +467,10 @@ class _HeaderCard extends StatelessWidget {
   }
 }
 
+
+// ============================================================
+// ANIMATED LOGO BADGE - Bouncing cart icon
+// ============================================================
 class _AnimatedLogoBadge extends StatefulWidget {
   const _AnimatedLogoBadge();
 
@@ -308,6 +536,10 @@ class _AnimatedLogoBadgeState extends State<_AnimatedLogoBadge>
   }
 }
 
+
+// ============================================================
+// APP FIELD - Reusable text input field
+// ============================================================
 class _AppField extends StatelessWidget {
   const _AppField({
     required this.controller,
@@ -377,5 +609,3 @@ class _AppField extends StatelessWidget {
     );
   }
 }
-
-

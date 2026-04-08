@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
+
+import '../config/api_config.dart';
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
@@ -31,10 +34,25 @@ class _SignInScreenState extends State<SignInScreen> {
     final password = _passwordController.text.trim();
 
     try {
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+      final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
+
+      // Call backend API to verify token and get user info
+      final idToken = await credential.user!.getIdToken();
+      final response = await http.post(
+        Uri.parse(ApiConfig.verifyToken),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $idToken',
+        },
+        body: '{}',
+      );
+
+      if (response.statusCode == 200) {
+        debugPrint('Backend API verified new user: ${credential.user?.email}');
+      }
 
       if (!mounted) return;
 
