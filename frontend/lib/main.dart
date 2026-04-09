@@ -52,8 +52,17 @@ class _FreshCartAppState extends State<FreshCartApp> {
   void _pushLogin() {
     _navigator.push(
       MaterialPageRoute(
-        builder: (_) => LoginScreen(onCreateAccount: _pushSignIn),
+        builder: (_) => LoginScreen(
+          onCreateAccount: _pushSignIn,
+          onForgotPassword: _pushForgotPassword,
+        ),
       ),
+    );
+  }
+
+  void _pushForgotPassword() {
+    _navigator.push(
+      MaterialPageRoute(builder: (_) => const ForgotPasswordScreen()),
     );
   }
 
@@ -63,3 +72,4 @@ class _FreshCartAppState extends State<FreshCartApp> {
     );
   }
 }
+
